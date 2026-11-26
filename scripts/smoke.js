@@ -9,7 +9,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { registerTrackingTools } from '../src/tools/tracking.js';
 for (const dependency of [mcpAuth, isClerkAuthInfo, protectedResourceMetadataHandler,
   authorizationServerMetadataHandler, streamableHttpHandler, StreamableHTTPServerTransport]) assert.equal(typeof dependency, 'function');
-const server = new McpServer({ name: 'smoke-test', version: '1.2.2' });
+const server = new McpServer({ name: 'smoke-test', version: '1.2.3' });
 let evriCalls = 0;
 const fail = () => { evriCalls++; throw new Error('Unauthenticated request reached Evri'); };
 registerTrackingTools(server, { getTracking: fail, getEta: fail, getProof: fail }, isClerkAuthInfo);

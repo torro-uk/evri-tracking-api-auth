@@ -26,7 +26,12 @@ export function loadConfig(env = process.env) {
   const oauth = httpsUrl(env.EVRI_OAUTH_URL || 'https://oauth.prod.evricloud.co.uk', 'EVRI_OAUTH_URL');
   const api = httpsUrl(env.EVRI_API_BASE_URL || 'https://api.evri.com', 'EVRI_API_BASE_URL');
   if (api.pathname !== '/') throw new Error('EVRI_API_BASE_URL must contain the API origin only');
+  const linkSecret = env.EVRI_PROOF_LINK_SECRET?.trim() || null;
+  const linkTtl = Number(env.EVRI_PROOF_LINK_TTL || 300);
+  if (linkSecret && !/^[a-fA-F0-9]{64}$/.test(linkSecret)) throw new Error('EVRI_PROOF_LINK_SECRET must be 64 hex characters');
+  if (linkSecret && (!Number.isInteger(linkTtl) || linkTtl < 30 || linkTtl > 300)) throw new Error('EVRI_PROOF_LINK_TTL must be 30-300 seconds');
   return {
+    proofLinks: { origin: resource.origin, secret: linkSecret, ttlSeconds: linkTtl },
     port,
     resourceUrl: resource.href,
     evri: {

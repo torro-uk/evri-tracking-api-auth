@@ -1,6 +1,13 @@
-# TORRO Evri Client Tracking MCP v1.2.2
+# TORRO Evri Client Tracking MCP v1.2.3
 
 Render-ready Node.js MCP server with Clerk OAuth authentication, reconstructed from the known v1.2.1 requirements. Implements all four existing tools, Evri Client Tracking API v1.2 (2 September 2026), and opt-in photo/signature diagnostics.
+
+## Changes in v1.2.3
+
+- Patched the actual v1.2.2 source. Existing native MCP image blocks (`data` = full original Base64) remain unchanged. When enabled, each image's JSON metadata also contains `imageUrl` and `expiresAt`.
+- Optional internal-only HTTPS bearer links use AES-256-GCM authenticated encryption; token hides barcode and binds resource, exact image hash and expiry. No image cache or persistent storage. A GET re-fetches evidence from Evri and returns the exact matching bytes, or fails closed if expired, changed or unavailable.
+- Enable only if TORRO authorizes bearer links for internal parcel evidence and has appropriate staff/parcel entitlement controls. Clerk authentication is required to mint links, but a browser or proxy fetching a link does not need Clerk: anyone holding a valid URL can read the image until expiry. Never share URLs with customers or third parties, and avoid logging full URLs (including proxy/access logs). ChatGPT image proxies may see or cache links despite no-store; confirm your policy before enabling. If per-request identity verification is required, leave disabled and use authenticated viewing instead.
+- In Render add `EVRI_PROOF_LINK_SECRET` using a fresh 64-character hexadecimal value (`openssl rand -hex 32`). Keep it secret and consistent across replicas. Optional `EVRI_PROOF_LINK_TTL` defaults to 300 seconds (allowed 30-300). Unset secret to disable; rotate it to invalidate existing links. No new npm dependencies. Existing tool schemas unchanged; no refresh necessary for execution. ChatGPT inline image display is not guaranteed; use a clickable link if necessary. Expired links require a new tool call. Each successful GET makes another upstream request; monitor Evri fair-use limits.
 
 ## Changes in v1.2.2
 
@@ -109,4 +116,4 @@ npm start
 
 ## Validation status
 
-19 dependency-free Node tests passed on Node 22.16.0 with mocked Evri HTTP responses; all JavaScript files were syntax-checked. These cover the canonical proof fields, PNG and JPEG header recognition, nested responses, binary fallback, errors, OAuth token caching/retry, tracking/ETA, MCP image content structure and log redaction. No real parcel photo was retrieved during testing. npm registry access was unavailable in the build environment, so dependencies were not installed, no lockfile was generated, the installed-dependency smoke test was not executed, and real Clerk OAuth / Render / live Evri integration was not validated. Run `npm install`, `npm run smoke` and the deployment checks above on your own service. The ZIP contains source files only; no live credentials or private customer evidence.
+27 dependency-free Node tests passed (19 original plus 8 proof-link tests) on Node 22.16.0 with mocked Evri HTTP responses; all production JavaScript files were syntax-checked. These cover the canonical proof fields, PNG and JPEG header recognition, nested responses, binary fallback, errors, OAuth token caching/retry, tracking/ETA, MCP image content structure and log redaction. No real parcel photo was retrieved during testing. npm registry access was unavailable in the build environment, so dependencies were not installed, no lockfile was generated, the installed-dependency smoke test was not executed, and real Clerk OAuth / Render / live Evri integration was not validated. Run `npm install`, `npm run smoke` and the deployment checks above on your own service. The ZIP contains source files only; no live credentials or private customer evidence.
