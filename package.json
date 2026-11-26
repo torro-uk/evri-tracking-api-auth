@@ -1,0 +1,17 @@
+{
+  "name": "torro-evri-direct-tracking-mcp",
+  "version": "1.2.1",
+  "private": true,
+  "type": "module",
+  "description": "TORRO Evri Client Tracking MCP with Clerk OAuth and four read-only tools",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": { "start": "node src/server.js", "test": "node --test", "check": "node --check src/server.js && node --check src/evri.js" },
+  "dependencies": {
+    "@clerk/express": "^2.1.70",
+    "@clerk/mcp-tools": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^3.25.0"
+  }
+}
