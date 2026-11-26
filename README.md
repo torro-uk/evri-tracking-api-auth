@@ -1,94 +1,112 @@
-# TORRO Evri Direct Tracking MCP v1.2.1 — Clerk OAuth
+# TORRO Evri Client Tracking MCP v1.2.2
 
-Read-only Node.js MCP server for **Evri Client Tracking API v1.2**. Deploy to Render and connect through ChatGPT's **OAuth** custom MCP connection. This is an update of the existing v1.1.0 SDK; `src/evri.js` and its original Evri tests are unchanged.
+Render-ready Node.js MCP server with Clerk OAuth authentication, reconstructed from the known v1.2.1 requirements. Implements all four existing tools, Evri Client Tracking API v1.2 (2 September 2026), and opt-in photo/signature diagnostics.
 
-## What's new
+## Changes in v1.2.2
 
-- **All four tools enabled**, with no `EVRI_PROOF_ENABLED` switch.
-- **No `MCP_BEARER_TOKEN`**. ChatGPT signs in through **Clerk OAuth**, and Clerk validates OAuth access tokens presented by the MCP client. Tokens still travel as standard OAuth Bearer tokens internally — you do not manually configure or distribute a static Bearer secret.
-- All `/mcp` operations require Clerk sign-in and the full MCP resource URL in the token `aud` claim.
-- No staff allowlist. Any user who can successfully sign in to the configured Clerk application can access all four tools. Restrict account creation within Clerk.
-- Existing Evri tracking history, ETA, safe-place photo, and signature functionality retained.
+- Uses the exact documented photo endpoint `GET /client-tracking/v1/safe-place-photos?barcode=...` and signature endpoint `GET /client-tracking/v1/signatures?barcode=...`.
+- Parses the documented `base64EncodedBytes` and `imageFormat` properties. Handles an optional `printedName` and returns native MCP image content with the detected MIME type, rather than placing Base64 in textual JSON. Image identification checks signatures/magic bytes, not full decoding. Documented response objects are preferred; arrays/known wrappers and recognized raw binary images are accepted defensively. No external image URLs are followed.
+- `EVRI_DEBUG_PROOF=true` logs proof endpoint HTTP status, content type, response size, JSON structure, recognized field names, image data length and detected image format. It logs no full body, image bytes, credentials, parcel ID, names or URLs. Debug applies to both proof endpoints, including upstream HTTP errors and retries. Disabled by default.
+- Distinguishes upstream HTTP failures from missing or invalid proof data.
+- Preserves four tool names, shared Evri token caching, one retry on upstream 401, optional ETA, Clerk-only authentication, and deployment environment variable names.
+- The original v1.2.1 archive could not be opened; this is a reconstruction, not a source-level diff. The Clerk server follows the official current Express guide, so dependency and OAuth implementation details may differ from v1.2.1. It requires Clerk OAuth `profile` scope and a matching resource audience. No separate static bearer token, proof-enable flag, or in-app staff allowlist is included.
 
 ## Tools
 
-| Tool | Outcome | Requirements |
-| --- | --- | --- |
-| `get_evri_tracking(tracking_id, include_eta?)` | Tracking events and optional ETA | Clerk login |
-| `get_evri_eta(tracking_id)` | ETA information | Same + Evri ETA entitlement |
-| `get_evri_delivery_photo(tracking_id)` | Safe-place photo as MCP image | Same + Evri photo entitlement |
-| `get_evri_signature(tracking_id)` | Signature image plus optional printed name | Same + Evri signature entitlement |
+| Tool | Input | Result |
+|---|---|---|
+| `get_evri_tracking` | `tracking_id`, optional `include_eta` (default false) | Latest event, full event history, GPS when supplied, advertised resource types, optional ETA |
+| `get_evri_eta` | `tracking_id` | ETA data, if enabled by Evri |
+| `get_evri_delivery_photo` | `tracking_id` | Native MCP image(s) and metadata |
+| `get_evri_signature` | `tracking_id` | Native MCP image(s), optional printed name and metadata |
 
-All requests use Evri's client credentials + `apikey` stored server-side. These are independent of Clerk authentication.
+All four tools require a verified Clerk OAuth access token. The tool schemas may be discovered without an access token, using Clerk's default discovery behaviour; no tracking or proof data is public. `tracking_id` is validated as a 16-character alphanumeric barcode.
 
-## Step 1 — Create or select a Clerk application
+## Prerequisites
 
-1. In [Clerk Dashboard](https://dashboard.clerk.com/), create or select the TORRO authentication application. Use the **production Clerk instance** for the deployed Render service.
-2. In **Agents → MCP servers**, select **Add MCP server**, and register the **exact deployed MCP URL**, for example `https://torro-evri.onrender.com/mcp`. This URL must match `MCP_RESOURCE_URL` byte-for-byte (no trailing slash).
-3. Turn on **Include Audience** in the OAuth application settings if not already enabled. The MCP checks that tokens have this exact URL in the `aud` claim.
-4. Enable **public OAuth clients / CIMD** where suitable for ChatGPT, or enable Dynamic Client Registration if your client requires it. Your Clerk instance must allow the registration method offered by ChatGPT. Configure default scope `profile` if ChatGPT doesn't request it.
-5. Disable public sign-up and create the single Clerk login you intend to use. Anyone using that login will have access to all four MCP tools.
-6. Copy your **Publishable Key** and **Secret Key** from the Clerk dashboard. Do not put your secret key in ChatGPT or source control.
+- Node.js 22.18.0 or newer (Render can set `NODE_VERSION=22.18.0`).
+- Existing Evri Client Tracking API credentials and entitlement to the relevant client, GPS, ETA, photo and signature products as applicable.
+- Existing Clerk instance with OAuth and the exact MCP resource URL configured. Clerk must be set up so only authorised TORRO personnel can sign in. This is an internal tool, not a public customer-facing application. Login alone does not establish customer entitlement to a parcel or its delivery evidence. Verify order/recipient association before sharing delivery evidence with a customer. Do not deploy with open public registration.
 
-Clerk documentation: https://clerk.com/docs/expressjs/guides/ai/mcp/build-mcp-server
+## Render deployment: existing service
 
-## Step 2 — Configure Render environment variables
+1. Extract this ZIP. Replace the files in the existing SDK repository with the files in its top-level directory. Do not overwrite your existing private `.env` or commit secrets. Commit/push the source and deploy the existing Render web service; do not create a new service unless required. If the old project has obsolete source files, remove them once you have backed up the repo.
+2. Set Build Command to `npm install` and Start Command to `npm start`. Health check path: `/health`. The web server binds to `0.0.0.0` and Render supplies `PORT` automatically.
+3. Confirm the six required variables below. Leave any working Evri endpoint overrides unchanged. Add `EVRI_DEBUG_PROOF=true` temporarily for the troubleshooting run. No changes to the existing ChatGPT custom app URL should be needed if the resource URL and service remain unchanged.
+4. Run `npm test` locally or in a build environment. After dependencies are installed, run `npm run smoke` to verify installed MCP imports, four registered tools, and the application-level anonymous-call guard; this is not a live OAuth test.
+5. After deployment, open `/health`, protected resource metadata, and the authorization server metadata URL shown below. Reconnect the custom app if Clerk asks for new consent.
+6. Ask ChatGPT to retrieve tracking events and the delivery photo for the test shipment. Inspect Render logs for `[EVRI_PROOF_DEBUG]`. After troubleshooting, set `EVRI_DEBUG_PROOF=false` and redeploy.
 
-```env
-EVRI_API_KEY=YOUR_EXISTING_EVRI_API_KEY
-EVRI_CLIENT_ID=YOUR_EXISTING_EVRI_OAUTH_AUTH_ID
-EVRI_CLIENT_SECRET=YOUR_EXISTING_EVRI_OAUTH_AUTH_SECRET
+## Environment variables
 
-CLERK_PUBLISHABLE_KEY=pk_live_... 
-CLERK_SECRET_KEY=sk_live_...
-MCP_RESOURCE_URL=https://YOUR-RENDER-SERVICE.onrender.com/mcp
+| Variable | Required | Value |
+|---|---|---|
+| `EVRI_API_KEY` | Yes | Evri API key |
+| `EVRI_CLIENT_ID` | Yes | Evri OAuth Auth ID |
+| `EVRI_CLIENT_SECRET` | Yes | Evri OAuth Auth Secret |
+| `CLERK_PUBLISHABLE_KEY` | Yes | Existing Clerk instance publishable key (production on Render) |
+| `CLERK_SECRET_KEY` | Yes | Full matching Clerk instance secret key (production on Render) |
+| `MCP_RESOURCE_URL` | Yes | `https://YOUR-SERVICE.onrender.com/mcp` (exact URL, no trailing slash) |
+| `NODE_VERSION` | Render | `22.18.0` or later |
+| `NODE_ENV` | Render | `production` |
+| `EVRI_DEBUG_PROOF` | No | `true` temporarily; default off |
+| `EVRI_OAUTH_URL` | No | Defaults to `https://oauth.prod.evricloud.co.uk`; preserve existing credential-pack override if applicable |
+| `EVRI_API_BASE_URL` | No | Defaults to `https://api.evri.com`; preserve existing working override if applicable |
+| `PORT` | No | Render-provided automatically; local default 3000 |
 
-NODE_ENV=production
+The optional `render.yaml` can be used for a fresh deployment. On an existing service, retain the existing service name and environment variables. There is no need to add `MCP_BEARER_TOKEN`, `EVRI_PROOF_ENABLED`, or an in-app staff allowlist.
+
+## Clerk and MCP discovery
+
+The application uses Clerk's official `mcpAuth`, `protectedResourceMetadataHandler`, `authorizationServerMetadataHandler`, and `streamableHttpHandler` Express helpers with the MCP TypeScript SDK 1.x. Clerk's current Express guide specifies `@clerk/express` >=2.1.70, `@clerk/mcp-tools` >=1.0.0, `@modelcontextprotocol/sdk` >=1.32.0 and Node >=22.18.0; package.json uses compatible ranges. Keep `package-lock.json` generated by your successful `npm install` in version control for reproducible later deployments.
+
+- `GET /health` is public and does not call Evri or prove authentication works.
+- `GET /.well-known/oauth-protected-resource/mcp` provides MCP protected resource metadata. A root protected-resource alias is also included.
+- `GET /.well-known/oauth-authorization-server` provides Clerk discovery for older clients.
+- `/mcp` supports stateless Streamable HTTP. All tool calls are authenticated by Clerk; tool callbacks also check verified Clerk auth info before calling Evri.
+- Use the same full URL in Clerk, the custom app, `MCP_RESOURCE_URL`, and the token audience. Enable Clerk's Include Audience setting, and allow the `profile` scope. If an already-issued token lacks the scope or audience, reconnect and consent. Keep your existing CIMD/DCR and client-admission configuration; the server does not invent a registration endpoint. Use Clerk's configured supported client-onboarding mechanism.
+- The production Clerk application must be restricted to appropriate internal users. No additional staff allowlist was added to this SDK, in line with the original requirements.
+
+Official Clerk guide: https://clerk.com/docs/expressjs/guides/ai/mcp/build-mcp-server
+
+## Proof response and logs
+
+The reference (pp. 12-13) describes a JSON object with `base64EncodedBytes`, `imageFormat`, optional `printedName` and `links`. The normalized image is returned as an MCP `image` content block (`data` is standard Base64, `mimeType` is an image media type). If Evri's declared format and recognized image header disagree, the header determines the MIME type. The SDK does not fetch any advertised external URL. A resource link does not guarantee API entitlement or a nonempty image.
+
+Example diagnostic log (illustrative only; not an actual shipment response):
+
+```
+[EVRI_PROOF_DEBUG] {"resource":"safe-place-photos","status":200,"ok":true,"contentType":"application/json","contentLength":123456,"bodyBytes":123456,"detectedImageFormat":null,"bodyKind":"json","json":{"type":"object","keys":["base64EncodedBytes","imageFormat"],"otherKeyCount":0,"base64EncodedBytes":{"type":"string","characters":123000,"detectedImageFormat":"JPEG"},"imageFormat":"JPEG"},"proofFieldCount":1}
 ```
 
-**Do not set** `MCP_BEARER_TOKEN` or `EVRI_PROOF_ENABLED`; neither is used in v1.2.1.
+The top-level `detectedImageFormat: null` is normal for a JSON envelope; look at the nested Base64 field for the decoded image format. Unknown field names are counted instead of logged; diagnostics never print image contents or response field values (except recognized image format labels).
 
-`EVRI_CLIENT_ID` means the Evri OAuth Auth ID, not the numeric Evri parcel Client ID. The Evri token request still uses `audience: client-tracking-api` and caches/refreshes the token.
+| Result | What to check |
+|---|---|
+| HTTP 200 + populated `base64EncodedBytes` | Should return an image if the bytes identify a supported format |
+| HTTP 200 + missing/empty Base64 field | `PROOF_UNAVAILABLE`; inspect sanitized structure/field count |
+| HTTP 200 + populated but unrecognized data | `PROOF_INVALID_IMAGE`; check format with Evri |
+| HTTP 200 + malformed JSON/nonimage | `PROOF_INVALID_RESPONSE`; inspect content type |
+| HTTP 403 | `EVRI_HTTP_403`; check client tracking/proof entitlement with Evri |
+| HTTP 404 | `EVRI_HTTP_404`; resource not found through API |
+| HTTP 401 at stage `oauth` | Check Evri OAuth credentials/endpoint/audience; no tracking call made |
+| HTTP 401 at resource stage | Upstream authorization failed after refreshing token once |
+| HTTP 429 | Respect Evri fair usage limit; do not repeatedly retry |
 
-## Step 3 — Deploy
+Evri Client Tracking API v1.2 docs: pp. 5-7 (OAuth), 9-10 (events), 11 (ETA), 12 (signatures), 13 (safe place photos), 14 (HTTP status codes). Associated Swagger: https://app.swaggerhub.com/apis-docs/EVRI/evri-client_tracking_api . The API specifies a 720 requests/minute fair-use limit; control aggregate use (no distributed rate limiter is implemented).
 
-- Node.js **22.18.0 or later** is required by Clerk's current MCP integration. Configure Render's Node version accordingly (for example using a `NODE_VERSION` Render environment variable if Render does not select a suitable version automatically).
-- Build command: `npm install` (or `npm ci` once you've generated and committed a lockfile).
-- Start command: `npm start`.
-- Health URL: `https://YOUR-RENDER-SERVICE.onrender.com/health` (public; reveals no secrets).
-- Protected MCP URL: `https://YOUR-RENDER-SERVICE.onrender.com/mcp`.
-- Protected resource metadata (public): `https://YOUR-RENDER-SERVICE.onrender.com/.well-known/oauth-protected-resource/mcp`.
-- Legacy OAuth server metadata (public): `https://YOUR-RENDER-SERVICE.onrender.com/.well-known/oauth-authorization-server`.
+## Local development
 
-The server **refuses to start** if Clerk keys, Evri credentials, or `MCP_RESOURCE_URL` are missing.
+```
+npm install
+npm test
+npm run check
+npm run smoke
+cp .env.example .env
+# Set credentials and the exact development Clerk resource URL.
+npm start
+```
 
-## Step 4 — Connect in ChatGPT
+## Validation status
 
-1. Keep the old unauthenticated Evri connection for reference, but use a **separate Render test service** to avoid interruption while validating OAuth (recommended).
-2. Add a **new custom MCP connection** in ChatGPT using the Clerk-enabled service's `/mcp` URL, choosing **OAuth** rather than **No Authentication**.
-3. ChatGPT should follow the metadata endpoints to the Clerk OAuth login and consent screen. Sign in using the configured Clerk account.
-4. Discover tools; all four should appear. Test `get_evri_tracking` first, followed by a known photo/signature shipment for which TORRO is authorised to see evidence.
-5. Once verified, migrate the primary service and remove the older unauthenticated ChatGPT connection.
-
-You cannot reuse the old unauthenticated connection's saved credentials to complete an OAuth flow. OAuth sign-in might need to be repeated if ChatGPT or Clerk revokes the session.
-
-## Security / Evri entitlement warning
-
-Clerk authenticates the signed-in account; this SDK does not restrict users by Clerk ID. A shared account means you cannot distinguish individual staff members or revoke access for one person without changing shared credentials. **Neither checks whether the recipient/customer owns a specific parcel.** The photo/signature tools are for **internal TORRO support only**. Staff must verify the Shopify order/recipient entitlement before sharing any proof-of-delivery evidence with a customer. Do not expose the MCP to customers without implementing order-specific checks. Evri's Client Tracking v1.2 specification forbids anonymous proof access and requires end-user entitlement verification.
-
-For a stronger control, extend the SDK with an authenticated TORRO Dashboard/Shopify order-ownership lookup in the proof tools; this package does not implement one.
-
-## Testing and troubleshooting
-
-Run `npm test` (offline unit tests of Evri client) and `npm run check` for Node syntax. Live Clerk login, Render deployment and Evri photo/signature entitlement require real account credentials and are **not** exercised by these unit tests.
-
-- **401 from `/mcp` before login:** expected; the response should advertise OAuth protected-resource metadata via `WWW-Authenticate`.
-- **OAuth token rejected after login:** verify the Clerk instance's keys, exact `MCP_RESOURCE_URL`, `aud` claim, `profile` scope, and CIMD/DCR client setting.
-- **Evri API 403 for photo/signature:** Evri may not have enabled the corresponding tracking product for your account.
-- **Evri OAuth 401:** check `EVRI_CLIENT_ID`, `EVRI_CLIENT_SECRET` and production OAuth audience `client-tracking-api`.
-
-## Official reference
-
-- [Clerk MCP Express implementation](https://clerk.com/docs/expressjs/guides/ai/mcp/build-mcp-server)
-- [Clerk's MCP tools v1.0 announcement](https://clerk.com/changelog/2026-11-20-mcp-tools-1-0)
-- Evri Client Tracking API v1.2 (provided by TORRO)
+19 dependency-free Node tests passed on Node 22.16.0 with mocked Evri HTTP responses; all JavaScript files were syntax-checked. These cover the canonical proof fields, PNG and JPEG header recognition, nested responses, binary fallback, errors, OAuth token caching/retry, tracking/ETA, MCP image content structure and log redaction. No real parcel photo was retrieved during testing. npm registry access was unavailable in the build environment, so dependencies were not installed, no lockfile was generated, the installed-dependency smoke test was not executed, and real Clerk OAuth / Render / live Evri integration was not validated. Run `npm install`, `npm run smoke` and the deployment checks above on your own service. The ZIP contains source files only; no live credentials or private customer evidence.

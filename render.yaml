@@ -1,12 +1,13 @@
 services:
   - type: web
-    name: torro-evri-tracking-mcp
+    name: torro-evri-client-tracking
     runtime: node
-    plan: free
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
       - key: NODE_ENV
         value: production
       - key: EVRI_API_KEY
@@ -21,3 +22,5 @@ services:
         sync: false
       - key: MCP_RESOURCE_URL
         sync: false
+      - key: EVRI_DEBUG_PROOF
+        value: "false"
